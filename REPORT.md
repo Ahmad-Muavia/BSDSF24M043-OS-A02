@@ -41,3 +41,15 @@ A simple loop through the array would print filenames sequentially, producing ro
 The `ioctl()` system call obtains terminal information. With `TIOCGWINSZ`, the program can retrieve the terminal's width and adjust its column layout accordingly.
 
 If the program always uses a fixed width of 80 characters, the output may not fit on wider or narrower terminals. It may leave unused space on wide terminals or produce poorly aligned columns on narrow terminals. Detecting the actual terminal width makes the output more adaptable.
+
+## Feature 4: Horizontal Column Display (-x)
+
+### 1. Compare down-then-across and horizontal printing
+
+The down-then-across layout requires more pre-calculation because it calculates the number of columns and rows before printing filenames. It uses the formula `index = col * rows + row` to display filenames vertically within each column.
+
+The horizontal layout is simpler. It processes filenames in sequence from left to right, tracks the current screen position, and starts a new line when the terminal width would be exceeded.
+
+### 2. Managing display modes
+
+I used two integer variables: `long_format` and `horizontal`. The `getopt()` function recognizes the `-l` and `-x` options. If `-l` is selected, the program calls `do_long_ls()`. If `-x` is selected, it calls `do_horizontal_ls()`. If neither option is selected, it calls `do_column_ls()` for the default down-then-across layout.
