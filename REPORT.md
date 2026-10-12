@@ -25,3 +25,19 @@ Examples of permission macros:
 The bitwise AND operator (`&`) checks whether a particular permission bit is set. For example, `mode & S_IRUSR` checks whether the owner has read permission.
 
 These values are used to construct the permission string, such as `-rw-r--r--` or `drwxr-xr-x`.
+
+## Feature 3: Column Display (Down Then Across)
+
+### 1. Explain the logic for down-then-across printing. Why is a single loop insufficient?
+
+The program first reads all filenames into a dynamically allocated array and records the longest filename. It then detects the terminal width using `ioctl()` and calculates the number of columns and rows.
+
+To print down then across, the program calculates each filename's array index using the column number multiplied by the number of rows, plus the row number.
+
+A simple loop through the array would print filenames sequentially, producing rows in across-first order. Calculating the index allows the program to print entries vertically within each column before moving to the next column.
+
+### 2. What is the purpose of `ioctl()`? What are the limitations of a fixed 80-column width?
+
+The `ioctl()` system call obtains terminal information. With `TIOCGWINSZ`, the program can retrieve the terminal's width and adjust its column layout accordingly.
+
+If the program always uses a fixed width of 80 characters, the output may not fit on wider or narrower terminals. It may leave unused space on wide terminals or produce poorly aligned columns on narrow terminals. Detecting the actual terminal width makes the output more adaptable.
