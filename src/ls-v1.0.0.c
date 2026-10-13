@@ -1,4 +1,3 @@
-
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <stdio.h>
@@ -20,9 +19,13 @@
 #define REVERSE "\033[7m"
 #define RESET   "\033[0m"
 
+void do_ls(const char *dir, int recursive_flag,
+           int long_format, int horizontal);
 void do_long_ls(const char *dir);
 void do_column_ls(const char *dir);
 void do_horizontal_ls(const char *dir);
+void do_recursive_ls(const char *dir, int long_format,
+                     int horizontal);
 void print_permissions(mode_t mode);
 
 int compare_names(const void *a, const void *b);
@@ -45,16 +48,20 @@ int main(int argc, char *argv[])
     int opt;
     int long_format = 0;
     int horizontal = 0;
+    int recursive_flag = 0;
 
-    while ((opt = getopt(argc, argv, "lx")) != -1)
+    while ((opt = getopt(argc, argv, "lxR")) != -1)
     {
         if (opt == 'l')
             long_format = 1;
         else if (opt == 'x')
             horizontal = 1;
+        else if (opt == 'R')
+            recursive_flag = 1;
         else
         {
-            fprintf(stderr, "Usage: %s [-l] [-x] [directory]\n",
+            fprintf(stderr,
+                    "Usage: %s [-l] [-x] [-R] [directory]\n",
                     argv[0]);
             return 1;
         }
@@ -62,26 +69,17 @@ int main(int argc, char *argv[])
 
     if (optind == argc)
     {
-        if (long_format)
-            do_long_ls(".");
-        else if (horizontal)
-            do_horizontal_ls(".");
-        else
-            do_column_ls(".");
+        do_ls(".", recursive_flag, long_format, horizontal);
     }
     else
     {
         for (int i = optind; i < argc; i++)
         {
-            if (argc - optind > 1)
+            if (!recursive_flag && argc - optind > 1)
                 printf("Directory listing of %s:\n", argv[i]);
 
-            if (long_format)
-                do_long_ls(argv[i]);
-            else if (horizontal)
-                do_horizontal_ls(argv[i]);
-            else
-                do_column_ls(argv[i]);
+            do_ls(argv[i], recursive_flag,
+                  long_format, horizontal);
 
             if (i < argc - 1)
                 puts("");
@@ -89,6 +87,27 @@ int main(int argc, char *argv[])
     }
 
     return 0;
+}
+
+void do_ls(const char *dir, int recursive_flag,
+           int long_format, int horizontal)
+{
+    if (recursive_flag)
+    {
+        do_recursive_ls(dir, long_format, horizontal);
+    }
+    else if (long_format)
+    {
+        do_long_ls(dir);
+    }
+    else if (horizontal)
+    {
+        do_horizontal_ls(dir);
+    }
+    else
+    {
+        do_column_ls(dir);
+    }
 }
 
 int read_names(const char *dir, char ***names, size_t *count)
@@ -204,7 +223,8 @@ const char *get_file_color(const char *name, mode_t mode)
 
 void print_colored_name(const char *name, mode_t mode)
 {
-    printf("%s%s%s", get_file_color(name, mode), name, RESET);
+    printf("%s%s%s", get_file_color(name, mode),
+           name, RESET);
 }
 
 void print_permissions(mode_t mode)
@@ -472,6 +492,54 @@ void do_horizontal_ls(const char *dir)
     }
 
     putchar('\n');
+
+    free_names(names, count);
+}
+
+void do_recursive_ls(const char *dir, int long_format,
+                     int horizontal)
+{
+    char **names;
+    size_t count;
+
+    printf("%s:\n", dir);
+
+    if (long_format)
+        do_long_ls(dir);
+    else if (horizontal)
+        do_horizontal_ls(dir);
+    else
+        do_column_ls(dir);
+
+    putchar('\n');
+
+    if (read_names(dir, &names, &count) == -1)
+        return;
+
+    for (size_t i = 0; i < count; i++)
+    {
+        char path[4096];
+        struct stat file_stat;
+
+        int n = snprintf(path, sizeof(path), "%s/%s",
+                         dir, names[i]);
+
+        if (n < 0 || (size_t)n >= sizeof(path))
+        {
+            fprintf(stderr, "Path too long: %s/%s\n",
+                    dir, names[i]);
+            continue;
+        }
+
+        if (lstat(path, &file_stat) == -1)
+        {
+            perror(path);
+            continue;
+        }
+
+        if (S_ISDIR(file_stat.st_mode))
+            do_recursive_ls(path, long_format, horizontal);
+    }
 
     free_names(names, count);
 }
