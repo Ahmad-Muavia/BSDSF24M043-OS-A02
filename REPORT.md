@@ -53,3 +53,13 @@ The horizontal layout is simpler. It processes filenames in sequence from left t
 ### 2. Managing display modes
 
 I used two integer variables: `long_format` and `horizontal`. The `getopt()` function recognizes the `-l` and `-x` options. If `-l` is selected, the program calls `do_long_ls()`. If `-x` is selected, it calls `do_horizontal_ls()`. If neither option is selected, it calls `do_column_ls()` for the default down-then-across layout.
+
+### Feature 5: Alphabetical Sorting
+
+**Q1. Why must we read all directory entries into memory before sorting? What are the drawbacks for directories containing millions of files?**
+
+We store all filenames in a dynamic array because `qsort()` needs an array to rearrange the entries. Reading filenames into memory allows us to sort them before displaying them. For millions of files, the array consumes a large amount of memory, requires more processing time, and memory allocation may fail.
+
+**Q2. Explain the purpose and signature of the `qsort()` comparison function. Why does it use `const void *`?**
+
+The comparison function compares two filenames and tells `qsort()` their alphabetical order. Its signature is `int compare_names(const void *a, const void *b)`. It returns a negative value if the first filename comes before the second, zero if they are equal, and a positive value if the first comes after the second. The `const void *` parameters allow `qsort()` to work with different data types. We cast them to string pointers and use `strcmp()` to compare filenames.

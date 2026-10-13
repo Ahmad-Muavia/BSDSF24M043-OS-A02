@@ -1,4 +1,3 @@
-
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <stdio.h>
@@ -13,11 +12,21 @@
 #include <grp.h>
 #include <time.h>
 
-void do_ls(const char *dir);
 void do_long_ls(const char *dir);
 void do_column_ls(const char *dir);
 void do_horizontal_ls(const char *dir);
 void print_permissions(mode_t mode);
+int compare_names(const void *a, const void *b);
+int read_names(const char *dir, char ***names, size_t *count);
+void free_names(char **names, size_t count);
+
+int compare_names(const void *a, const void *b)
+{
+    const char *name_a = *(const char * const *)a;
+    const char *name_b = *(const char * const *)b;
+
+    return strcmp(name_a, name_b);
+}
 
 int main(int argc, char *argv[])
 {
@@ -70,25 +79,92 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-void do_ls(const char *dir)
+int read_names(const char *dir, char ***names, size_t *count)
 {
     DIR *dp = opendir(dir);
+
+    *names = NULL;
+    *count = 0;
 
     if (dp == NULL)
     {
         perror(dir);
-        return;
+        return -1;
     }
 
+    size_t capacity = 0;
     struct dirent *entry;
 
-    while ((entry = readdir(dp)) != NULL)
+    while (1)
     {
-        if (entry->d_name[0] != '.')
-            printf("%s\n", entry->d_name);
+        errno = 0;
+        entry = readdir(dp);
+
+        if (entry == NULL)
+        {
+            if (errno != 0)
+            {
+                perror("readdir");
+                goto failure;
+            }
+
+            break;
+        }
+
+        if (entry->d_name[0] == '.')
+            continue;
+
+        if (*count == capacity)
+        {
+            size_t new_capacity =
+                capacity == 0 ? 16 : capacity * 2;
+
+            char **temp = realloc(
+                *names, new_capacity * sizeof(char *));
+
+            if (temp == NULL)
+            {
+                perror("realloc");
+                goto failure;
+            }
+
+            *names = temp;
+            capacity = new_capacity;
+        }
+
+        (*names)[*count] = strdup(entry->d_name);
+
+        if ((*names)[*count] == NULL)
+        {
+            perror("strdup");
+            goto failure;
+        }
+
+        (*count)++;
     }
 
     closedir(dp);
+
+    if (*count > 1)
+        qsort(*names, *count, sizeof(char *), compare_names);
+
+    return 0;
+
+failure:
+    closedir(dp);
+    free_names(*names, *count);
+    *names = NULL;
+    *count = 0;
+
+    return -1;
+}
+
+void free_names(char **names, size_t count)
+{
+    for (size_t i = 0; i < count; i++)
+        free(names[i]);
+
+    free(names);
 }
 
 void print_permissions(mode_t mode)
@@ -135,31 +211,25 @@ void print_permissions(mode_t mode)
 
 void do_long_ls(const char *dir)
 {
-    DIR *dp = opendir(dir);
+    char **names;
+    size_t count;
 
-    if (dp == NULL)
-    {
-        perror(dir);
+    if (read_names(dir, &names, &count) == -1)
         return;
-    }
 
-    struct dirent *entry;
     struct stat file_stat;
     char path[4096];
     char date[32];
 
-    while ((entry = readdir(dp)) != NULL)
+    for (size_t i = 0; i < count; i++)
     {
-        if (entry->d_name[0] == '.')
-            continue;
-
         int n = snprintf(path, sizeof(path), "%s/%s",
-                         dir, entry->d_name);
+                         dir, names[i]);
 
         if (n < 0 || (size_t)n >= sizeof(path))
         {
             fprintf(stderr, "Path too long: %s/%s\n",
-                    dir, entry->d_name);
+                    dir, names[i]);
             continue;
         }
 
@@ -175,13 +245,9 @@ void do_long_ls(const char *dir)
         char *time_text = ctime(&file_stat.st_mtime);
 
         if (time_text != NULL)
-        {
             snprintf(date, sizeof(date), "%.12s", time_text + 4);
-        }
         else
-        {
             strcpy(date, "unknown");
-        }
 
         print_permissions(file_stat.st_mode);
 
@@ -191,77 +257,35 @@ void do_long_ls(const char *dir)
                group ? group->gr_name : "unknown",
                (long)file_stat.st_size,
                date,
-               entry->d_name);
+               names[i]);
     }
 
-    closedir(dp);
+    free_names(names, count);
 }
 
 void do_column_ls(const char *dir)
 {
-    DIR *dp = opendir(dir);
+    char **names;
+    size_t count;
 
-    if (dp == NULL)
+    if (read_names(dir, &names, &count) == -1)
+        return;
+
+    if (count == 0)
     {
-        perror(dir);
+        free_names(names, count);
         return;
     }
 
-    struct dirent *entry;
-    char **names = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
     size_t max_len = 0;
 
-    while (1)
+    for (size_t i = 0; i < count; i++)
     {
-        errno = 0;
-        entry = readdir(dp);
-
-        if (entry == NULL)
-        {
-            if (errno != 0)
-                perror("readdir");
-            break;
-        }
-
-        if (entry->d_name[0] == '.')
-            continue;
-
-        if (count == capacity)
-        {
-            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
-            char **temp = realloc(names,
-                                  new_capacity * sizeof(char *));
-
-            if (temp == NULL)
-            {
-                perror("realloc");
-                goto cleanup_column;
-            }
-
-            names = temp;
-            capacity = new_capacity;
-        }
-
-        names[count] = strdup(entry->d_name);
-
-        if (names[count] == NULL)
-        {
-            perror("strdup");
-            goto cleanup_column;
-        }
-
-        size_t len = strlen(names[count]);
+        size_t len = strlen(names[i]);
 
         if (len > max_len)
             max_len = len;
-
-        count++;
     }
-
-    if (count == 0)
-        goto cleanup_column;
 
     struct winsize ws;
     size_t terminal_width = 80;
@@ -304,79 +328,32 @@ void do_column_ls(const char *dir)
         putchar('\n');
     }
 
-cleanup_column:
-    for (size_t i = 0; i < count; i++)
-        free(names[i]);
-
-    free(names);
-    closedir(dp);
+    free_names(names, count);
 }
 
 void do_horizontal_ls(const char *dir)
 {
-    DIR *dp = opendir(dir);
+    char **names;
+    size_t count;
 
-    if (dp == NULL)
+    if (read_names(dir, &names, &count) == -1)
+        return;
+
+    if (count == 0)
     {
-        perror(dir);
+        free_names(names, count);
         return;
     }
 
-    struct dirent *entry;
-    char **names = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
     size_t max_len = 0;
 
-    while (1)
+    for (size_t i = 0; i < count; i++)
     {
-        errno = 0;
-        entry = readdir(dp);
-
-        if (entry == NULL)
-        {
-            if (errno != 0)
-                perror("readdir");
-            break;
-        }
-
-        if (entry->d_name[0] == '.')
-            continue;
-
-        if (count == capacity)
-        {
-            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
-            char **temp = realloc(names,
-                                  new_capacity * sizeof(char *));
-
-            if (temp == NULL)
-            {
-                perror("realloc");
-                goto cleanup_horizontal;
-            }
-
-            names = temp;
-            capacity = new_capacity;
-        }
-
-        names[count] = strdup(entry->d_name);
-
-        if (names[count] == NULL)
-        {
-            perror("strdup");
-            goto cleanup_horizontal;
-        }
-
-        size_t len = strlen(names[count]);
+        size_t len = strlen(names[i]);
 
         if (len > max_len)
             max_len = len;
-
-        count++;
     }
-
-    if (count == 0)
-        goto cleanup_horizontal;
 
     struct winsize ws;
     size_t terminal_width = 80;
@@ -420,10 +397,5 @@ void do_horizontal_ls(const char *dir)
 
     putchar('\n');
 
-cleanup_horizontal:
-    for (size_t i = 0; i < count; i++)
-        free(names[i]);
-
-    free(names);
-    closedir(dp);
+    free_names(names, count);
 }
