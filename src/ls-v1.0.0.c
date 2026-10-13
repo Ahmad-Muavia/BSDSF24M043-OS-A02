@@ -1,3 +1,4 @@
+
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <stdio.h>
@@ -12,13 +13,24 @@
 #include <grp.h>
 #include <time.h>
 
+#define BLUE    "\033[1;34m"
+#define GREEN   "\033[1;32m"
+#define RED     "\033[1;31m"
+#define PINK    "\033[1;35m"
+#define REVERSE "\033[7m"
+#define RESET   "\033[0m"
+
 void do_long_ls(const char *dir);
 void do_column_ls(const char *dir);
 void do_horizontal_ls(const char *dir);
 void print_permissions(mode_t mode);
+
 int compare_names(const void *a, const void *b);
 int read_names(const char *dir, char ***names, size_t *count);
 void free_names(char **names, size_t count);
+
+const char *get_file_color(const char *name, mode_t mode);
+void print_colored_name(const char *name, mode_t mode);
 
 int compare_names(const void *a, const void *b)
 {
@@ -167,6 +179,34 @@ void free_names(char **names, size_t count)
     free(names);
 }
 
+const char *get_file_color(const char *name, mode_t mode)
+{
+    if (S_ISLNK(mode))
+        return PINK;
+
+    if (S_ISDIR(mode))
+        return BLUE;
+
+    if (S_ISFIFO(mode) || S_ISSOCK(mode) ||
+        S_ISCHR(mode) || S_ISBLK(mode))
+        return REVERSE;
+
+    if (strstr(name, ".tar") != NULL ||
+        strstr(name, ".gz") != NULL ||
+        strstr(name, ".zip") != NULL)
+        return RED;
+
+    if (mode & (S_IXUSR | S_IXGRP | S_IXOTH))
+        return GREEN;
+
+    return RESET;
+}
+
+void print_colored_name(const char *name, mode_t mode)
+{
+    printf("%s%s%s", get_file_color(name, mode), name, RESET);
+}
+
 void print_permissions(mode_t mode)
 {
     char p[11];
@@ -189,12 +229,15 @@ void print_permissions(mode_t mode)
     p[1] = (mode & S_IRUSR) ? 'r' : '-';
     p[2] = (mode & S_IWUSR) ? 'w' : '-';
     p[3] = (mode & S_IXUSR) ? 'x' : '-';
+
     p[4] = (mode & S_IRGRP) ? 'r' : '-';
     p[5] = (mode & S_IWGRP) ? 'w' : '-';
     p[6] = (mode & S_IXGRP) ? 'x' : '-';
+
     p[7] = (mode & S_IROTH) ? 'r' : '-';
     p[8] = (mode & S_IWOTH) ? 'w' : '-';
     p[9] = (mode & S_IXOTH) ? 'x' : '-';
+
     p[10] = '\0';
 
     if (mode & S_ISUID)
@@ -251,13 +294,15 @@ void do_long_ls(const char *dir)
 
         print_permissions(file_stat.st_mode);
 
-        printf(" %2lu %-8s %-8s %8ld %s %s\n",
+        printf(" %2lu %-8s %-8s %8ld %s ",
                (unsigned long)file_stat.st_nlink,
                user ? user->pw_name : "unknown",
                group ? group->gr_name : "unknown",
                (long)file_stat.st_size,
-               date,
-               names[i]);
+               date);
+
+        print_colored_name(names[i], file_stat.st_mode);
+        putchar('\n');
     }
 
     free_names(names, count);
@@ -314,7 +359,22 @@ void do_column_ls(const char *dir)
             if (index >= count)
                 continue;
 
-            printf("%s", names[index]);
+            char path[4096];
+            struct stat file_stat;
+
+            int n = snprintf(path, sizeof(path), "%s/%s",
+                             dir, names[index]);
+
+            if (n >= 0 && (size_t)n < sizeof(path) &&
+                lstat(path, &file_stat) == 0)
+            {
+                print_colored_name(names[index],
+                                   file_stat.st_mode);
+            }
+            else
+            {
+                printf("%s", names[index]);
+            }
 
             if (col < columns - 1)
             {
@@ -376,7 +436,22 @@ void do_horizontal_ls(const char *dir)
             position = 0;
         }
 
-        printf("%s", names[i]);
+        char path[4096];
+        struct stat file_stat;
+
+        int n = snprintf(path, sizeof(path), "%s/%s",
+                         dir, names[i]);
+
+        if (n >= 0 && (size_t)n < sizeof(path) &&
+            lstat(path, &file_stat) == 0)
+        {
+            print_colored_name(names[i], file_stat.st_mode);
+        }
+        else
+        {
+            printf("%s", names[i]);
+        }
+
         position += len;
 
         if (i < count - 1)
@@ -384,6 +459,7 @@ void do_horizontal_ls(const char *dir)
             if (column_width < terminal_width)
             {
                 size_t padding = column_width - len;
+
                 printf("%*s", (int)padding, "");
                 position += padding;
             }
