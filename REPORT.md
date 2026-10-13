@@ -63,3 +63,13 @@ We store all filenames in a dynamic array because `qsort()` needs an array to re
 **Q2. Explain the purpose and signature of the `qsort()` comparison function. Why does it use `const void *`?**
 
 The comparison function compares two filenames and tells `qsort()` their alphabetical order. Its signature is `int compare_names(const void *a, const void *b)`. It returns a negative value if the first filename comes before the second, zero if they are equal, and a positive value if the first comes after the second. The `const void *` parameters allow `qsort()` to work with different data types. We cast them to string pointers and use `strcmp()` to compare filenames.
+
+### Feature-7: Recursive Listing (-R)
+
+**1. What is a base case in recursion? What stops recursion in our `ls` program?**
+
+A base case is the condition that stops a recursive function from calling itself repeatedly. In our `ls` program, recursion stops when the current directory has no more subdirectories to visit, or when a directory cannot be opened. The program also skips hidden entries, including `.` and `..`, preventing infinite recursion.
+
+**2. Why must we construct the full path before making a recursive call?**
+
+We construct the full path, such as `parent_dir/subdir`, so the program can locate the correct subdirectory. If we call `do_recursive_ls("subdir")` directly, the program searches for that directory relative to the current working directory rather than the parent directory being listed. This can cause it to open the wrong directory or fail to find it.
